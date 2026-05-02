@@ -1,0 +1,19 @@
+# Build outputs (huge, stay on remote nvme only)
+build/
+output/
+staging_dir/
+tmp/
+bin/
+
+# Local image cache (small, scp'd from remote for TFTP testing)
+images/
+
+# Editor
+*.swp
+*.swo
+.vscode/
+.idea/
+*~
+
+# Logs
+*.log
