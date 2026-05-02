@@ -46,6 +46,10 @@ export FORCE_UNSAFE_CONFIGURE=1
 export FAKED_MODE=unknown-is-root
 MAKE_VARS="FORCE_UNSAFE_CONFIGURE=1"
 
+# OpenWrt's tmp/.packageinfo index can go stale and lose targets like
+# opkg/host/compile. Rebuild the index before every build.
+rm -rf tmp
+
 echo "==> downloading all sources first (parallel: 8 jobs)"
 make $MAKE_VARS download -j8 V=s 2>&1 | tail -10
 
