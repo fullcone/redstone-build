@@ -1,0 +1,9 @@
+#!/bin/sh
+# Auto-checkout pushed commits into the working tree.
+# Installed at: /mnt/nvme/git/redstone-build.git/hooks/post-receive
+GIT_DIR=/mnt/nvme/git/redstone-build.git
+WORK_TREE=/mnt/nvme/redstone-build
+mkdir -p "$WORK_TREE"
+git --git-dir="$GIT_DIR" --work-tree="$WORK_TREE" checkout -f main
+echo "[post-receive] working tree updated to:"
+git --git-dir="$GIT_DIR" --work-tree="$WORK_TREE" log -1 --oneline
