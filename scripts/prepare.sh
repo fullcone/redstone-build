@@ -20,8 +20,6 @@ if [ ! -d immortalwrt/.git ]; then
 fi
 
 cd immortalwrt
-git fetch --tags --depth 1 origin "refs/tags/$IMM_TAG:refs/tags/$IMM_TAG" 2>/dev/null || true
-git checkout -f "$IMM_TAG" 2>/dev/null || git checkout -f "$IMM_BRANCH"
 echo "==> ImmortalWrt at $(git log --oneline -1)"
 
 echo "==> feeds update + install"
