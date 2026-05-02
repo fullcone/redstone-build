@@ -25,6 +25,18 @@ fi
 
 echo "==> seeding .config from $CONFIG_SRC"
 cp "$CONFIG_SRC" .config
+
+# Mirror: ImmortalWrt 24.10 ships tencent.com mirrors by default; on builders
+# whose upstream is reachable directly (e.g. US-routed proxy) the default
+# OpenWrt sources.openwrt.org / GNU upstream is faster. Set USE_UPSTREAM_MIRROR=1
+# to override.
+if [ "${USE_UPSTREAM_MIRROR:-0}" = "1" ]; then
+    echo "==> reverting tencent mirror to OpenWrt upstream"
+    # Remove ImmortalWrt's mirror patch effects by clearing custom URL prefix.
+    sed -i '/^CONFIG_DOWNLOAD_BASE_URL/d' .config
+    echo '# CONFIG_DOWNLOAD_BASE_URL is not set' >> .config
+fi
+
 make defconfig 2>&1 | tail -5
 
 echo "==> downloading all sources first (parallel: 8 jobs)"
