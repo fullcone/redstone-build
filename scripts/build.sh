@@ -27,8 +27,11 @@ echo "==> seeding .config from $CONFIG_SRC"
 cp "$CONFIG_SRC" .config
 make defconfig 2>&1 | tail -5
 
-echo "==> building (parallel: $(nproc) jobs)"
-make -j"$(nproc)" 2>&1 | tail -50
+echo "==> downloading all sources first (parallel: 8 jobs)"
+make download -j8 V=s 2>&1 | tail -10
+
+echo "==> building (parallel: $(nproc) jobs, V=s for full log)"
+make -j"$(nproc)" V=s 2>&1 | tail -100
 
 echo
 echo "==> output:"
