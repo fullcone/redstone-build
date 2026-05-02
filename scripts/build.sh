@@ -39,6 +39,12 @@ fi
 
 make defconfig 2>&1 | tail -5
 
+# OpenWrt's autotools-based components (GNU tar, etc.) refuse to configure as
+# root for safety. Builder VM runs as root, so explicitly opt in.
+export FORCE_UNSAFE_CONFIGURE=1
+# fakeroot also needs this on root-owned trees.
+export FAKED_MODE=unknown-is-root
+
 echo "==> downloading all sources first (parallel: 8 jobs)"
 make download -j8 V=s 2>&1 | tail -10
 
