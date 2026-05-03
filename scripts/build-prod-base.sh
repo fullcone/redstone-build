@@ -215,9 +215,13 @@ else
 fi
 
 # --- Stage 2.5: assemble combined cpio (base initramfs + /lib/modules) -----
-# Key by BOTH kernel CFG_HASH and userspace USER_HASH so any change in
-# either input forces a rebuild.
-COMBINED_CPIO=$CACHE/initramfs-with-modules-${CFG_HASH}-${USER_HASH}.cpio
+# Cache key includes a content hash of $INITRAMFS so we don't reuse a stale
+# combined cpio when the upstream initramfs was rebuilt with the same
+# USER_HASH inputs but different content (e.g. when an environmental fix
+# like a feeds.index repair changed what `make` actually produces). Without
+# this guard we shipped a 24MB cpio while the new initramfs was 48MB.
+INITRAMFS_HASH=$(sha256sum "$INITRAMFS" | cut -c1-12)
+COMBINED_CPIO=$CACHE/initramfs-with-modules-${CFG_HASH}-${INITRAMFS_HASH}.cpio
 if [ ! -f "$COMBINED_CPIO" ]; then
     EXTRA_DIR=$CACHE/extra-stage
     rm -rf "$EXTRA_DIR"
@@ -241,7 +245,7 @@ echo "[OK] dtb compiled+padded: $DTB_PAD ($(stat -c%s "$DTB_PAD") bytes)"
 # --- Stage 4: assemble FIT --------------------------------------------------
 ITS=$CACHE/redstone-prod-base.its
 ITB=$OUT/redstone-prod-base.itb
-GIT_REV="22.03+EdgeNOS5.10-${CFG_HASH}-${USER_HASH}"
+GIT_REV="22.03+EdgeNOS5.10-${CFG_HASH}-${USER_HASH}-${INITRAMFS_HASH}"
 
 cat > "$ITS" <<ITS
 /dts-v1/;
