@@ -54,6 +54,15 @@ rm -rf tmp
 # decompress overflows ('GUNZIP: out-of-mem or overwrite'). Raw FIT works.
 bash "$WORK/scripts/patch-p2020-no-gzip.sh" 2>&1 | tail -3
 
+# Patch p2020si-pre.dtsi cpus block (cpu@0/cpu@1 dual-core, standard naming).
+# Redstone vendor U-Boot's ft_fixup_l2cache requires this; without it bootm
+# stops at "ft_fixup_l2cache: FDT_ERR_NOTFOUND".
+# NOTE: only effective AFTER kernel source is unpacked (first build extracts
+# it). On a fresh build this script is a no-op the first run, then re-applies
+# correctly on subsequent runs. Workaround: run scripts/build.sh twice on
+# fresh checkout, or run patch script manually after first kernel/prepare.
+bash "$WORK/scripts/patch-p2020-dts-cpus.sh" 2>&1 | tail -3 || true
+
 echo "==> downloading all sources first (parallel: 8 jobs)"
 make $MAKE_VARS download -j8 V=s 2>&1 | tail -10
 
