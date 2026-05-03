@@ -47,6 +47,17 @@ mkdir -p "$CACHE" "$OUT"
 exec > >(tee -a "$LOG") 2>&1
 echo "=== build-prod-base.sh starting at $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
 
+# Forced-rebuild flags must invalidate downstream caches too. Without this,
+# Stage 2.5 (combined cpio) and Stage 4 (FIT) can still be cache-hit even
+# though Stage 1 or 2 was forcibly rerun, silently shipping stale modules
+# or initramfs. (codex review 2 P1: cache invalidation on forced rebuild)
+if [ "$REBUILD_KERNEL" = 1 ] || [ "$REBUILD_USERSPACE" = 1 ]; then
+    echo "[INFO] force-rebuild requested → clearing combined cpio + userspace stamps"
+    rm -f "$CACHE"/initramfs-with-modules-*.cpio
+    rm -f "$CACHE"/userspace-*.stamp
+    rm -f "$CACHE"/extra-mods.cpio
+fi
+
 # --- run_check: run a command, print last 5 lines, propagate failure --------
 # Replaces the `cmd 2>&1 | tail -N` antipattern that swallows non-zero exit
 # codes (codex P1 #2 + P2 #3). On failure, dumps the last 50 lines of the
@@ -168,13 +179,22 @@ fi
 # --- Stage 2: OpenWrt 22.03 userspace initramfs -----------------------------
 INITRAMFS=$OPENWRT/build_dir/target-powerpc_8540_musl/linux-mpc85xx_p2020/linux-5.10.221/usr/initramfs_data.cpio
 
-# Userspace cache key includes diy-script inputs so any package/files change
-# triggers a rebuild. Hashing inputs only — config snippets that don't exist
-# (e.g. before P3) hash to empty and don't affect the result.
+# Userspace cache key hashes inputs that influence the userspace initramfs:
+#   - config/p3-switch.config (package set + ordering)
+#   - files/** content AND each file's relative path (so a rename without
+#     content change still invalidates the cache — codex review 2 P2)
+# Use a sorted manifest of "path|sha256(content)" lines so the result is
+# both content- and path-sensitive without depending on tar metadata.
 USER_HASH=$(
     {
-        [ -f "$REDSTONE/config/p3-switch.config" ] && cat "$REDSTONE/config/p3-switch.config"
-        find "$REDSTONE/files" -type f 2>/dev/null | sort | xargs -r cat 2>/dev/null
+        [ -f "$REDSTONE/config/p3-switch.config" ] && \
+            printf 'config/p3-switch.config|' && \
+            sha256sum "$REDSTONE/config/p3-switch.config" | cut -d' ' -f1
+        if [ -d "$REDSTONE/files" ]; then
+            ( cd "$REDSTONE/files" && find . -type f -print0 \
+                | sort -z \
+                | xargs -0 -I{} sh -c 'printf "files/%s|" "${1#./}"; sha256sum "$1" | cut -d" " -f1' _ {} )
+        fi
     } | sha256sum | cut -c1-12
 )
 USER_STAMP=$CACHE/userspace-${USER_HASH}.stamp
@@ -202,7 +222,13 @@ if [ ! -f "$INITRAMFS" ] || [ ! -f "$USER_STAMP" ] || [ "$REBUILD_USERSPACE" = 1
         echo "FAIL: initramfs not produced at $INITRAMFS" >&2; exit 1
     fi
     NEW_MTIME=$(stat -c %Y "$INITRAMFS")
-    if [ "$NEW_MTIME" -le "$PREV_MTIME" ]; then
+    # Only enforce mtime-advance when the rebuild was triggered by an input
+    # change (cache miss). Under --rebuild-userspace the user explicitly
+    # asked us to re-run make even when everything is already up to date,
+    # in which case make legitimately exits 0 with the existing initramfs
+    # untouched. Failing here would break the documented forced-rebuild
+    # contract. (codex review 4 P2 #2)
+    if [ "$REBUILD_USERSPACE" != 1 ] && [ "$NEW_MTIME" -le "$PREV_MTIME" ]; then
         echo "FAIL: initramfs mtime unchanged ($PREV_MTIME → $NEW_MTIME) — make produced nothing fresh" >&2
         exit 1
     fi
