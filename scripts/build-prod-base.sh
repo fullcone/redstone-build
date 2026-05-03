@@ -52,16 +52,18 @@ echo "=== build-prod-base.sh starting at $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
 # codes (codex P1 #2 + P2 #3). On failure, dumps the last 50 lines of the
 # captured log so the operator can see what broke without mining BUILD.log.
 run_check() {
-    local logf
+    local logf rc=0
     logf=$(mktemp -t redstone-XXXXXX.log)
-    "$@" > "$logf" 2>&1
-    local rc=$?
-    if [ $rc -ne 0 ]; then
+    # `|| rc=$?` keeps the whole pipeline returning success so the parent's
+    # `set -e` doesn't abort before we capture the exit code. Without this
+    # the inner failure would kill the script before the FAIL log dump runs.
+    "$@" > "$logf" 2>&1 || rc=$?
+    if [ "$rc" -ne 0 ]; then
         echo "FAIL ($rc): $*" >&2
         echo "----- last 50 lines of failed command output -----" >&2
         tail -50 "$logf" >&2
         rm -f "$logf"
-        exit $rc
+        exit "$rc"
     fi
     tail -5 "$logf"
     rm -f "$logf"
@@ -142,11 +144,9 @@ if [ ! -f "$KERNEL_BIN" ] || [ "$REBUILD_KERNEL" = 1 ]; then
     export CROSS_COMPILE=powerpc-openwrt-linux-musl-
     export ARCH=powerpc
 
-    # `yes "" | make olddefconfig` — yes exits 141 on SIGPIPE which would trip
-    # pipefail. Use a here-string of newlines instead so there's no pipe.
-    yes "" | head -n 200 > /tmp/oldconfig-yes.txt
-    run_check make olddefconfig < /tmp/oldconfig-yes.txt
-    rm -f /tmp/oldconfig-yes.txt
+    # `make olddefconfig` is non-interactive (uses default for any new symbol);
+    # no stdin needed. Original `yes "" | make ...` was a pipefail trap.
+    run_check make olddefconfig
 
     # Real build: any compile error halts immediately with last 50 lines.
     run_check make -j"$(nproc)" vmlinux modules
