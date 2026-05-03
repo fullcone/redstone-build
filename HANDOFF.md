@@ -36,31 +36,43 @@ SSH key auth is set up on `root@172.16.0.143` (no password needed).
 | ImmortalWrt 24.10.6 cloned to remote | ✅ |
 | `feeds update -a && feeds install -a` | ✅ |
 | `make defconfig` baseline (freescale_p2020rdb) | ✅ |
-| `make -j40 world` for `freescale_p2020rdb` initramfs FIT | 🔄 in progress (Monitor `bjaz2lirx` will fire when done) |
-| scp `.itb` back to `images/` locally | ⏳ auto on Monitor success |
-| TFTP boot + procd prompt + eth1 reachable on Redstone | ⏳ requires you on the U-Boot console |
+| `make -j40 world` for `freescale_p2020rdb` initramfs FIT | ✅ **DONE** |
+| scp images back to `images/` locally | ✅ **DONE** |
+| TFTP boot + procd prompt + eth1 reachable on Redstone | ⏳ **YOU NEXT** — see commands below |
+
+## Image files in `images/`
+
+| File | Size | Use |
+|---|---|---|
+| `immortalwrt-mpc85xx-p2020-freescale_p2020rdb-initramfs-kernel.bin` | **14.7 MB** | TFTP + bootm (no NAND write) |
+| `immortalwrt-mpc85xx-p2020-freescale_p2020rdb-squashfs-sysupgrade.bin` | 12.1 MB | NAND flash (later, after TFTP test passes) |
+| `*.manifest` | 6 KB | package list |
+| `sha256sums` | 716 B | integrity hashes |
+
+**Important**: The `.bin` file is actually a **FIT image** (DTB blob v17,
+contains kernel + dtb + initramfs). OpenWrt's mpc85xx target names it `.bin`
+even though it's FIT format — `bootm` handles both.
 
 ## What you need to do when you wake up
 
-### 1. Verify the baseline image landed locally
+### 1. Image is already local
+
+`images/immortalwrt-mpc85xx-p2020-freescale_p2020rdb-initramfs-kernel.bin`
+(14.7 MB FIT image).
+
+### 2. Copy to TFTP server
+
+scp the .bin file to `10.188.2.243:/tftpboot/` (or wherever your tftpd serves):
 
 ```sh
-ls -la C:\other_project\R0678\redstone-build\images\
-# expect: openwrt-mpc85xx-p2020-freescale_p2020rdb-initramfs-fit-multi.itb (~5-10 MB)
+scp images/immortalwrt-mpc85xx-p2020-freescale_p2020rdb-initramfs-kernel.bin \
+    user@10.188.2.243:/tftpboot/
 ```
 
-If the file isn't there, the build either failed or is still running. Check:
-```sh
-wsl ssh root@172.16.0.143 'pgrep -af scripts/build.sh ; tail -20 /mnt/nvme/redstone-build/build.log'
-```
+(rename to a shorter name on the tftp server if you like — U-Boot tftp accepts
+any filename).
 
-### 2. Copy the .itb to the TFTP server (10.188.2.243)
-
-The image needs to be in `/tftpboot/` (or whatever directory your tftpd serves)
-on the TFTP host so U-Boot can fetch it. Path/method depends on your TFTP
-server setup.
-
-### 3. On the Redstone U-Boot console (serial / minicom)
+### 3. On the Redstone U-Boot console (serial)
 
 See **`docs/uboot-tftp-boot.md`** for the proven command set. Quick version:
 
@@ -73,15 +85,16 @@ setenv bootargs   "console=ttyS0,115200 loglevel=8 cache-sram-size=0x10000"
 saveenv
 
 ping 10.188.2.243              # verify TFTP reachable
-tftp 0x02000000 openwrt-mpc85xx-p2020-freescale_p2020rdb-initramfs-fit-multi.itb
+tftp 0x02000000 immortalwrt-mpc85xx-p2020-freescale_p2020rdb-initramfs-kernel.bin
 bootm 0x02000000
 ```
 
 If `bootm` complains about multiple configurations, list them with `imi
-0x02000000` and pick:
+0x02000000` and pick the one you see (likely `conf-fsl_p2020rdb-pc.dtb` or
+similar):
 
 ```
-bootm 0x02000000#freescale_p2020rdb
+bootm 0x02000000#conf-fsl_p2020rdb-pc.dtb
 ```
 
 ### 4. What outcomes mean
