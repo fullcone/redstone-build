@@ -1,4 +1,5 @@
-# Redstone (R0678) U-Boot TFTP Boot Cheatsheet
+# Redstone R0768-F0002-00 U-Boot TFTP Boot Cheatsheet
+(R0678 = working dir codename; actual board PN = R0768-F0002-00)
 
 Source: codex/claudecode session history mining (`docs/redstone_progress.md`,
 `docs/redstone_hardware_inventory.md`, codex `04-28T23-42` L20372). All commands
@@ -40,11 +41,22 @@ Each time you have a new image to test, scp it to `10.188.2.243:/tftpboot/`,
 then on the U-Boot console:
 
 ```
+setenv bootm_low  0x10000000
+setenv bootm_size 0x10000000
 tftp 0x02000000 <image-filename>.itb
 bootm 0x02000000
 ```
 
 `0x02000000` is the proven load address for P2020 (default `$loadaddr`).
+
+**`bootm_low` / `bootm_size` are mandatory per-boot env** for any kernel
+larger than ~14MB (which OpenWrt 6.6 always is at ~28MB). Without them,
+vendor U-Boot tries to relocate the FDT into 0–16MB which is already filled
+by the kernel — fails with `Failed to allocate 0x... bytes below 0x1000000`.
+**`fdt_high=0xffffffff` does NOT bypass this** on the Redstone vendor U-Boot;
+the 16MB ceiling is hardcoded into the FDT alloc path. Only `bootm_low` /
+`bootm_size` move the alloc region. **Do not `saveenv`** these — would break
+the ONIE/EdgeNOS production boot path.
 
 If the FIT image has multiple `configurations:` (typical when DTS Makefile
 defines several variants), `bootm` needs the configuration selector:
@@ -79,11 +91,13 @@ If `ping` fails:
 
 | Symptom | Fix |
 |---|---|
-| `GUNZIP: uncompress, out-of-mem or overwrite error - must RESET board` after `bootm` | OpenWrt mpc85xx p2020.mk uses gzip-compressed kernel inside FIT. At ~14MB compressed → ~30MB decompressed, the in-place gunzip target overlaps the FIT image staging region. **Fix: patch `target/linux/mpc85xx/image/p2020.mk` to drop `gzip |` from KERNEL pipeline and use `fit none` instead of `fit gzip`.** Already automated in `scripts/patch-p2020-no-gzip.sh`, called by `scripts/build.sh`. |
+| `GUNZIP: uncompress, out-of-mem or overwrite error - must RESET board` after `bootm` | Vendor U-Boot's in-place gunzip overlaps the FIT staging region for any compressed sub-image bigger than ~8MB compressed → ~14MB+ uncompressed. **Applies to both kernel AND initramfs FIT nodes.** Workaround: keep all FIT sub-images `compression = "none"`. Kernel itself can stay raw (~28MB ok). Initramfs raw cpio (~32MB) ok. Total FIT ~50MB still TFTPs fine on this Intel X722 NIC. EdgeNOS uses the same raw approach in their `uImage-b2-clean.itb`. |
 | `ERROR: Failed to allocate 0x... bytes below 0x1000000. device tree - allocation error` | After de-gzipping the kernel, raw image is ~28MB and loaded at 0x0, occupying 0–0x1c00000. U-Boot's default FDT relocation looks for free RAM below 0x1000000 (16MB) — none available. **Long-term fix already in `patch-p2020-no-gzip.sh`: set KERNEL_LOADADDR=0x04000000** in p2020.mk so kernel goes to 64MB and 0–64MB stays free for FDT/initrd. (Temporary U-Boot env workaround — `setenv fdt_high 0xffffffff ; bootm` — is NOT needed once the patch is in.) |
 | `ft_fixup_l2cache: FDT_ERR_NOTFOUND` (then bootm stalls) | Redstone vendor U-Boot iterates all `cpu@N` nodes during fixup; mainline OpenWrt p2020rdb DTS only declares `PowerPC,P2020@0` (single CPU, non-standard name). When the iterator reaches the missing 2nd core, it returns FDT_ERR_NOTFOUND and the fixup aborts. **Fix in `scripts/patch-p2020-dts-cpus.sh`**: rewrite the `cpus{}` block to standard `cpu@0` + `cpu@1` (P2020 is dual-core). |
 | `pcie@ffe09000` panic in early kernel | DTB must `status="disabled"` the empty PCIe controller. **Test 6.6 mainline first** before manually patching — upstream may have fixed this. |
 | Linux `eth1` ARP `INCOMPLETE`, `RX=0`, `TX>0` | TBI@0x11 PHY returns `0xffff`; mainline gianfar then takes the wrong "already linked" branch. Patch `drivers/net/phy/broadcom.c` (`bcm54616s_redstone_preserve_uboot_sgmii`) + DTS property. **Test 6.6 mainline first** — upstream may have fixed this. |
+| `bootm` jumps then board reboots / silently hangs after `Loading Kernel Image` | KERNEL_LOADADDR / Entry must be `0x00000000`. PowerPC e500v2 kernel is linked at virt `0xc0000000` / phys `0x0` — any non-zero load address (including the `0x04000000` patched into p2020.mk earlier) means the wrapper jumps into bytes that don't match the link layout and the CPU faults silently. EdgeNOS .its uses `load=<0x00>; entry=<0x00>;` — match that. |
+| `ft_fixup_l2cache` print followed by hang (with cpu@1 patched into dtb) | The vendor U-Boot's L2 cache fixup expected the EdgeNOS DTB layout, which has **only `cpu@0`** (single-core declaration is enough — the second core is brought up later by Linux SMP code). Adding cpu@1 is a *reverse* patch — undo `scripts/patch-p2020-dts-cpus.sh`. The original 5.10 EdgeNOS dtb at `_external/edgenos/build/linux-5.10.224/arch/powerpc/boot/dts/redstone-stage1.dtb` is the verified shape. |
 | `gianfar: Device model property missing` | DTS eTSEC node needs `model = "eTSEC"`. |
 | `usb@22000: Invalid 'dr_mode'` | DTS USB node needs `dr_mode = "host"`. |
 | TFTP works in U-Boot but not in Linux | Indicates Linux gianfar SerDes/PCS RX path is broken — see eth1 `RX=0` row above. |

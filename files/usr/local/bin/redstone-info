@@ -1,0 +1,40 @@
+#!/bin/sh
+# Quick-look diagnostic for Redstone switch — `redstone-info` on serial console.
+# No external deps; uses only busybox + opkg-installed tools available in P3 image.
+
+echo "=== Redstone R0768-F0002-00 ==="
+echo "host:    $(uci get system.@system[0].hostname 2>/dev/null) ($(uname -r))"
+echo "uptime:  $(uptime | sed 's/.*up //;s/,.*load/  load/')"
+echo "kernel:  $(uname -mvr)"
+echo "image:   $(cat /etc/openwrt_version 2>/dev/null) / $(grep -m1 OPENWRT /etc/openwrt_release 2>/dev/null | cut -d= -f2- | tr -d \\\")"
+
+echo
+echo "--- mem / cpu ---"
+free -h | grep -v ^Swap
+echo "load: $(cat /proc/loadavg)"
+
+echo
+echo "--- net interfaces ---"
+ip -brief link show | grep -v "^lo "
+echo
+ip -brief -4 addr show | grep -v "^lo "
+
+echo
+echo "--- routing daemons ---"
+for d in zebra bgpd ospfd staticd lldpd snmpd chronyd; do
+    if pgrep -x $d >/dev/null 2>&1; then
+        echo "  [up]   $d"
+    else
+        echo "  [down] $d"
+    fi
+done
+
+echo
+echo "--- pcie ---"
+lspci 2>/dev/null | grep -E "0001|Broadcom" | head -3 || echo "  (lspci not installed; install pciutils)"
+
+echo
+echo "--- thermals ---"
+[ -d /sys/class/thermal ] && for z in /sys/class/thermal/thermal_zone*; do
+    [ -r "$z/temp" ] && printf "  %s  %5.1f C\n" "$(cat $z/type)" "$(awk '{print $1/1000}' $z/temp)"
+done

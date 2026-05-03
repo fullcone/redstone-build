@@ -1,0 +1,118 @@
+diff --git a/drivers/net/ethernet/freescale/gianfar.c b/drivers/net/ethernet/freescale/gianfar.c
+--- a/drivers/net/ethernet/freescale/gianfar.c
++++ b/drivers/net/ethernet/freescale/gianfar.c
+@@ -1600,6 +1600,14 @@
+ 		priv->oldduplex = -1;
+ 	}
+ 
++	if (priv->tbi_node || priv->interface == PHY_INTERFACE_MODE_SGMII)
++		netdev_info(ndev,
++			    "Redstone TBI: link update link=%d speed=%d duplex=%d ECNTRL=%#x MACCFG1=%#x MACCFG2=%#x RCTRL=%#x RSTAT=%#x TSTAT=%#x\n",
++			    phydev->link, phydev->speed, phydev->duplex,
++			    gfar_read(&regs->ecntrl), gfar_read(&regs->maccfg1),
++			    gfar_read(&regs->maccfg2), gfar_read(&regs->rctrl),
++			    gfar_read(&regs->rstat), gfar_read(&regs->tstat));
++
+ 	if (netif_msg_link(priv))
+ 		phy_print_status(phydev);
+ }
+@@ -1636,6 +1636,7 @@
+ {
+ 	struct gfar_private *priv = netdev_priv(dev);
+ 	struct phy_device *tbiphy;
++	int bmsr, bmcr, adv, tbicon, wr_tbicon, wr_adv, wr_bmcr;
+ 
+ 	if (!priv->tbi_node) {
+ 		dev_warn(&dev->dev, "error: SGMII mode requires that the "
+@@ -1643,6 +1644,9 @@
+ 		return;
+ 	}
+ 
++	netdev_info(dev, "Redstone TBI: entry interface=%d phy_node=%pOF tbi_node=%pOF\n",
++		    priv->interface, priv->phy_node, priv->tbi_node);
++
+ 	tbiphy = of_phy_find_device(priv->tbi_node);
+ 	if (!tbiphy) {
+ 		dev_err(&dev->dev, "error: Could not get TBI device\n");
+@@ -1654,21 +1658,43 @@
+ 	 * everything for us?  Resetting it takes the link down and requires
+ 	 * several seconds for it to come back.
+ 	 */
+-	if (phy_read(tbiphy, MII_BMSR) & BMSR_LSTATUS) {
++	bmsr = phy_read(tbiphy, MII_BMSR);
++	if (bmsr < 0) {
++		netdev_warn(dev,
++			    "Redstone TBI: BMSR read failed (%d), treating as invalid and programming SerDes\n",
++			    bmsr);
++	} else if (bmsr == 0xffff) {
++		netdev_warn(dev,
++			    "Redstone TBI: BMSR read returned all ones, treating as invalid and programming SerDes\n");
++	} else if (bmsr & BMSR_LSTATUS) {
++		netdev_info(dev,
++			    "Redstone TBI: BMSR %#x already reports link; keeping firmware SerDes setup\n",
++			    bmsr);
+ 		put_device(&tbiphy->mdio.dev);
+ 		return;
+ 	}
+ 
++	netdev_info(dev, "Redstone TBI: programming SerDes, initial BMSR=%#x\n",
++		    bmsr);
++
+ 	/* Single clk mode, mii mode off(for serdes communication) */
+-	phy_write(tbiphy, MII_TBICON, TBICON_CLK_SELECT);
++	wr_tbicon = phy_write(tbiphy, MII_TBICON, TBICON_CLK_SELECT);
+ 
+-	phy_write(tbiphy, MII_ADVERTISE,
+-		  ADVERTISE_1000XFULL | ADVERTISE_1000XPAUSE |
+-		  ADVERTISE_1000XPSE_ASYM);
+-
+-	phy_write(tbiphy, MII_BMCR,
+-		  BMCR_ANENABLE | BMCR_ANRESTART | BMCR_FULLDPLX |
+-		  BMCR_SPEED1000);
++	wr_adv = phy_write(tbiphy, MII_ADVERTISE,
++			   ADVERTISE_1000XFULL | ADVERTISE_1000XPAUSE |
++			   ADVERTISE_1000XPSE_ASYM);
++
++	wr_bmcr = phy_write(tbiphy, MII_BMCR,
++			    BMCR_ANENABLE | BMCR_ANRESTART | BMCR_FULLDPLX |
++			    BMCR_SPEED1000);
++
++	bmcr = phy_read(tbiphy, MII_BMCR);
++	bmsr = phy_read(tbiphy, MII_BMSR);
++	adv = phy_read(tbiphy, MII_ADVERTISE);
++	tbicon = phy_read(tbiphy, MII_TBICON);
++	netdev_info(dev,
++		    "Redstone TBI: writes TBICON=%d ADV=%d BMCR=%d; post-program BMCR=%#x BMSR=%#x ADV=%#x TBICON=%#x\n",
++		    wr_tbicon, wr_adv, wr_bmcr, bmcr, bmsr, adv, tbicon);
+ 
+ 	put_device(&tbiphy->mdio.dev);
+ }
+@@ -1682,7 +1708,9 @@
+ 	struct gfar_private *priv = netdev_priv(dev);
+ 	phy_interface_t interface = priv->interface;
+ 	struct phy_device *phydev;
++	struct gfar __iomem *regs = priv->gfargrp[0].regs;
+ 	struct ethtool_eee edata;
++	u32 ecntrl;
+ 
+ 	linkmode_set_bit_array(phy_10_100_features_array,
+ 			       ARRAY_SIZE(phy_10_100_features_array),
+@@ -1703,8 +1731,17 @@
+ 		return -ENODEV;
+ 	}
+ 
+-	if (interface == PHY_INTERFACE_MODE_SGMII)
++	ecntrl = gfar_read(&regs->ecntrl);
++	netdev_info(dev,
++		    "Redstone TBI: init_phy interface=%d ECNTRL-before=%#x phy_addr=%d phy_id=%#x phy_node=%pOF tbi_node=%pOF\n",
++		    interface, ecntrl, phydev->mdio.addr, phydev->phy_id,
++		    priv->phy_node, priv->tbi_node);
++
++	if (interface == PHY_INTERFACE_MODE_SGMII) {
+ 		gfar_configure_serdes(dev);
++	} else {
++		netdev_info(dev, "Redstone TBI: non-SGMII interface; skipping SerDes setup\n");
++	}
+ 
+ 	/* Remove any features not supported by the controller */
+ 	linkmode_and(phydev->supported, phydev->supported, mask);
