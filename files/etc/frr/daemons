@@ -1,0 +1,31 @@
+# FRR daemons selector for Redstone switch
+# Each =yes here causes /etc/init.d/frr to launch the corresponding daemon.
+
+zebra=yes
+bgpd=yes
+ospfd=yes
+ospf6d=yes
+staticd=yes
+ripd=no
+ripngd=no
+isisd=no
+pimd=no
+ldpd=no
+nhrpd=no
+eigrpd=no
+babeld=no
+sharpd=no
+fabricd=no
+vrrpd=no
+pathd=no
+bfdd=no
+
+# Daemon-specific options (default loglevel etc).
+zebra_options="  -A 127.0.0.1 -s 90000000"
+bgpd_options="   -A 127.0.0.1"
+ospfd_options="  -A 127.0.0.1"
+ospf6d_options=" -A ::1"
+staticd_options="-A 127.0.0.1"
+
+# vtysh modular config (every daemon gets its own file under /etc/frr/)
+vtysh_enable=yes

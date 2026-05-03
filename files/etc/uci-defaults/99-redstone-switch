@@ -1,0 +1,55 @@
+#!/bin/sh
+# First-boot config for Redstone R0768-F0002-00 switch.
+# Runs once on first boot (procd-init), then deletes itself.
+# Idempotent — safe to re-run if you `touch /etc/uci-defaults/99-redstone-switch`.
+
+set -e
+
+# --- Hostname: redstone-<last-2-bytes-of-eth0-mac> ------------------------
+MAC_TAIL=$(cat /sys/class/net/eth0/address 2>/dev/null | awk -F: '{printf "%s%s", $5, $6}')
+HOSTNAME="redstone-${MAC_TAIL:-unknown}"
+uci set system.@system[0].hostname="$HOSTNAME"
+uci set system.@system[0].timezone='UTC'
+uci set system.@system[0].zonename='UTC'
+uci set system.@system[0].log_size='256'   # 256 KB ring (default 64 too small)
+
+# --- Mgmt IP on eth0 (RGMII front port — change for your topology) --------
+uci set network.lan='interface'
+uci set network.lan.device='eth0'
+uci set network.lan.proto='static'
+uci set network.lan.ipaddr='192.168.100.1'
+uci set network.lan.netmask='255.255.255.0'
+
+# Disable the OpenWrt default WAN section (no WAN on a switch)
+uci -q delete network.wan
+uci -q delete network.wan6
+
+# --- SSH: dropbear listen everywhere, allow password until ops sets keys ---
+uci set dropbear.@dropbear[0].PasswordAuth='on'
+uci set dropbear.@dropbear[0].RootPasswordAuth='on'
+uci set dropbear.@dropbear[0].Port='22'
+
+# --- Firewall: allow SSH, SNMP, LLDP, NTP from any zone (mgmt-only box) ---
+uci -q delete firewall.@zone[0]
+uci -q delete firewall.@zone[1]
+uci -q delete firewall.@forwarding[0]
+uci add firewall zone >/dev/null
+uci set firewall.@zone[-1].name='mgmt'
+uci set firewall.@zone[-1].network='lan'
+uci set firewall.@zone[-1].input='ACCEPT'
+uci set firewall.@zone[-1].output='ACCEPT'
+uci set firewall.@zone[-1].forward='ACCEPT'
+
+# --- chrony: pool default to upstream until ops sets local NTP -----------
+uci set system.ntp.enabled='0'   # disable busybox ntpd; chrony takes over
+
+# --- Commit ---------------------------------------------------------------
+uci commit
+
+# --- Enable services on boot ----------------------------------------------
+for svc in network firewall dropbear lldpd snmpd chronyd frr collectd; do
+    /etc/init.d/$svc enable 2>/dev/null || true
+done
+
+# --- Self-delete (uci-defaults convention) --------------------------------
+exit 0

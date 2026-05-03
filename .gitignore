@@ -4,6 +4,8 @@ output/
 staging_dir/
 tmp/
 bin/
+# But our committed rootfs overlay scripts under files/ are intentional:
+!files/usr/local/bin/
 
 # Local image cache (small, scp'd from remote for TFTP testing)
 images/

@@ -18,18 +18,33 @@ matrix and `memory/project_baseline_22_03.md` for the pivot rationale.
 ```
 inputs/                          immutable build inputs (committed)
   edgenos/
-    config/as5610_defconfig       vendor kernel defconfig
-    patches/0001-gianfar-*.patch  TBI fix
+    config/as5610_defconfig        vendor kernel defconfig
+    patches/0001-gianfar-*.patch   TBI fix
     patches/0002-bcm54616s-*.patch SGMII preserve fix
-    dts/redstone-stage1.dts       Redstone PPC dts
-  dtb/clean-dtb-1.dtb             verified Redstone dtb (vendor-U-Boot compatible)
+    dts/redstone-stage1.dts        Redstone PPC dts (vendor)
+  dtb/
+    clean-dtb-1.dts                vendor reference (do not edit)
+    redstone.dts                   our patched dts (committed deltas)
+
+config/
+  p3-switch.config               package additions for switch role (frr, lldpd, snmpd, ...)
+
+files/                           static files copied as-is into image rootfs
+  etc/
+    frr/{daemons,frr.conf}         FRR daemon selector + skeleton config
+    snmp/snmpd.conf                snmpd v2c read-only template
+    lldpd.d/redstone.conf          LLDP advertise config
+    chrony/chrony.conf             NTP client+server (mgmt subnet)
+    uci-defaults/99-redstone-switch first-boot config (hostname / mgmt IP / firewall)
+  usr/local/bin/redstone-info    quick-look diag (`redstone-info`)
 
 scripts/
-  build-prod-base.sh              main orchestrator (idempotent)
-  ...                             one-off helpers from kexec investigation (kept for reference)
+  build-prod-base.sh             main orchestrator (idempotent)
+  diy-script.sh                  applies P3 config + files/ before initramfs build
+  ...                            one-off helpers from kexec investigation (kept for reference)
 
-output/                           FIT image + md5 + log (gitignored)
-cache/                            kernel src, padded dtb (gitignored)
+output/                          FIT image + md5 + log (gitignored)
+cache/                           kernel src, padded dtb, modules tree (gitignored)
 ```
 
 The build host (which `build-prod-base.sh` reads/writes from) is `root@172.16.0.143`,
