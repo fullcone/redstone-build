@@ -79,6 +79,7 @@ If `ping` fails:
 
 | Symptom | Fix |
 |---|---|
+| `GUNZIP: uncompress, out-of-mem or overwrite error - must RESET board` after `bootm` | OpenWrt mpc85xx p2020.mk uses gzip-compressed kernel inside FIT. At ~14MB compressed → ~30MB decompressed, the in-place gunzip target overlaps the FIT image staging region. **Fix: patch `target/linux/mpc85xx/image/p2020.mk` to drop `gzip |` from KERNEL pipeline and use `fit none` instead of `fit gzip`.** Already automated in `scripts/patch-p2020-no-gzip.sh`, called by `scripts/build.sh`. |
 | `pcie@ffe09000` panic in early kernel | DTB must `status="disabled"` the empty PCIe controller. **Test 6.6 mainline first** before manually patching — upstream may have fixed this. |
 | Linux `eth1` ARP `INCOMPLETE`, `RX=0`, `TX>0` | TBI@0x11 PHY returns `0xffff`; mainline gianfar then takes the wrong "already linked" branch. Patch `drivers/net/phy/broadcom.c` (`bcm54616s_redstone_preserve_uboot_sgmii`) + DTS property. **Test 6.6 mainline first** — upstream may have fixed this. |
 | `gianfar: Device model property missing` | DTS eTSEC node needs `model = "eTSEC"`. |

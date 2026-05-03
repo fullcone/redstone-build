@@ -50,6 +50,10 @@ MAKE_VARS="FORCE_UNSAFE_CONFIGURE=1"
 # opkg/host/compile. Rebuild the index before every build.
 rm -rf tmp
 
+# Patch p2020.mk to drop kernel gzip — at ~14MB compressed, the in-place
+# decompress overflows ('GUNZIP: out-of-mem or overwrite'). Raw FIT works.
+bash "$WORK/scripts/patch-p2020-no-gzip.sh" 2>&1 | tail -3
+
 echo "==> downloading all sources first (parallel: 8 jobs)"
 make $MAKE_VARS download -j8 V=s 2>&1 | tail -10
 
