@@ -16,7 +16,25 @@ if grep -q "kernel-bin | gzip" "$P"; then
     sed -i 's#fit gzip#fit none#' "$P"
     echo "patched: kernel pipeline stripped of gzip"
 else
-    echo "already patched"
+    echo "already patched (gzip)"
+fi
+
+# p2020.mk lacks KERNEL_LOADADDR; default 0x0 conflicts with P2020 reset vector
+# (boot stalls after ft_fixup_l2cache because kernel can't run from 0x0 on this
+# vendor U-Boot). Set 0x4000000 (64MB), well clear of low memory.
+if ! grep -q "KERNEL_LOADADDR" "$P"; then
+    awk '
+        /^define Device\/freescale_p2020rdb/ { in_dev=1 }
+        in_dev && /^  BLOCKSIZE/ {
+            print "  KERNEL_LOADADDR := 0x04000000"
+            print "  KERNEL_ENTRY := 0x04000000"
+        }
+        /^endef/ { in_dev=0 }
+        { print }
+    ' "$P" > "$P.tmp" && mv "$P.tmp" "$P"
+    echo "patched: KERNEL_LOADADDR = 0x04000000"
+else
+    echo "already patched (loadaddr)"
 fi
 
 grep -A 1 "^  KERNEL :=" "$P"
