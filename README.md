@@ -1,54 +1,73 @@
-# Redstone (R0678) ImmortalWrt Build
+# Redstone R0768-F0002-00 — OpenWrt 22.03 production base
 
-ImmortalWrt 24.10.6 based bring-up for Edgecore-style P2020 + BCM56846 switches.
-Multi-board (Redstone / AS5612 / future SFP variants) reuse via shared SDK package.
+Build target: Edgecore Redstone R0768-F0002-00 (Freescale P2020 PowerPC e500v2,
+BCM56846 ASIC, BCM84848 PHY).
 
-## Architecture
+> Working dir name `R0678` is the codename. The actual board PN is `R0768-F0002-00`.
+> EdgeNOS internal naming "AS5610-52X" is a NOS-internal label, not the vendor SKU.
 
-- **Local (Windows + WSL)**: edit small files (DTS, patches, scripts), `git push`.
-- **Remote (172.16.0.143:/mnt/nvme/redstone-build/)**: auto-checkout via post-receive hook,
-  run buildroot, output stays on the 1.9 TB nvme. Only the final image (~MB) is scp'd back.
+## Why OpenWrt 22.03 (kernel 5.10) and not newer
+
+Mainline PPC32 `head_85xx.S` regression between 5.10 and 5.15. Tested 5.15.180,
+6.6.135, and 6.12.85 — all silent on this hardware after `kexec_core: Bye!`.
+5.10 boots cleanly. See `memory/project_kernel_regression.md` for the test
+matrix and `memory/project_baseline_22_03.md` for the pivot rationale.
 
 ## Layout
 
 ```
-boards/
-  redstone/
-    redstone.dts        DTS for Edgecore Redstone (R0678)
-    redstone.c          board.c (machine_device_initcall)
-    redstone.config     menuconfig diff (CONFIG_PACKAGE_*, CONFIG_TARGET_*)
-patches/
-  0001-*.patch          mpc85xx kernel patches (will pop in if upstream 6.6 still has bugs)
-packages/
-  bcm-sdk/              OpenBCM 6.5.27 BDE/KNET/userland wrapped as OpenWrt package (Phase 2)
+inputs/                          immutable build inputs (committed)
+  edgenos/
+    config/as5610_defconfig       vendor kernel defconfig
+    patches/0001-gianfar-*.patch  TBI fix
+    patches/0002-bcm54616s-*.patch SGMII preserve fix
+    dts/redstone-stage1.dts       Redstone PPC dts
+  dtb/clean-dtb-1.dtb             verified Redstone dtb (vendor-U-Boot compatible)
+
 scripts/
-  prepare.sh            Remote-side: clone immortalwrt + apply patches + symlink boards
-  build.sh BOARD        Remote-side: produce TFTP-loadable initramfs FIT image
-  fetch-image.sh        Local-side: scp the .itb back from remote
+  build-prod-base.sh              main orchestrator (idempotent)
+  ...                             one-off helpers from kexec investigation (kept for reference)
+
+output/                           FIT image + md5 + log (gitignored)
+cache/                            kernel src, padded dtb (gitignored)
 ```
 
-## Quick start
+The build host (which `build-prod-base.sh` reads/writes from) is `root@172.16.0.143`,
+all under `/mnt/nvme/redstone-build/`. See `memory/reference_remote_paths.md`.
+
+## Build
 
 ```sh
-# (one-time) add remote
-git remote add origin root@172.16.0.143:/mnt/nvme/git/redstone-build.git
-
-# edit -> commit -> push (auto-updates remote working tree)
-git push origin main
-
-# remote build
-ssh root@172.16.0.143 'cd /mnt/nvme/redstone-build && ./scripts/build.sh redstone'
-
-# pull image back
-./scripts/fetch-image.sh redstone
+ssh root@172.16.0.143
+bash /mnt/nvme/redstone-build/scripts/build-prod-base.sh
 ```
 
-## Status
+Idempotent. Pass `--rebuild-kernel` or `--rebuild-userspace` to force a stage.
+Output: `/mnt/nvme/redstone-build/output/redstone-prod-base.itb`.
 
-- [x] Phase 0: ImmortalWrt 24.10.6 (kernel 6.6) cloned on remote
-- [ ] Phase 1: TFTP-loadable initramfs FIT image of default `freescale_p2020rdb` boots on Redstone
-  - Test if PCIe panic and eth1 (BCM54616S/gianfar) issues self-resolved on 6.6 mainline
-- [ ] Phase 2: Add Redstone board profile (DTS/board.c/Device definition)
-- [ ] Phase 3: Wrap OpenBCM 6.5.27 BDE/KNET/userland as OpenWrt package
-- [ ] Phase 4: switchd integration (or replace with bcm.user CLI script)
-- [ ] Phase 5: Multi-board (port AS5612 etc. by reusing the same SDK package)
+## Deploy
+
+```
+uboot> tftp 0x10000000 redstone-prod-base.itb
+uboot> bootm 0x10000000
+```
+
+## What's in the base image
+
+- **Kernel**: EdgeNOS 5.10.224 + 2 vendor patches (gianfar TBI fix,
+  BCM54616S SGMII preserve) + `CONFIG_KEXEC=y`
+- **Userspace**: OpenWrt 22.03 mpc85xx_p2020 default initramfs
+  (busybox + dropbear + opkg)
+- **DTB**: Redstone verified, 4KB padded so vendor U-Boot has space to setprop
+  `chosen.linux,stdout-path` without `chosen node create failed`
+
+## Roadmap
+
+| #   | Goal                                                         | Depends |
+|-----|--------------------------------------------------------------|---------|
+| P1  | Reproducible base image build (this script)                  | —       |
+| P2  | NOR/NAND squashfs+overlay rootfs (drop initramfs-only)       | P1      |
+| P3  | Switch package set + diy-script (frr, lldpd, snmpd, mstpd)   | P1      |
+| P4  | FRR control-plane POC (software forwarding)                  | P3      |
+| P5  | GitHub Actions CI                                            | parallel|
+| P6  | BCM SDK package + zebra hardware offload                     | P4      |

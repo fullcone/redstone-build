@@ -1,0 +1,370 @@
+/dts-v1/;
+
+/ {
+	model = "Redstone Stage-1";
+	compatible = "celestica,redstone\0fsl,P2020RDB";
+	#address-cells = <0x02>;
+	#size-cells = <0x02>;
+
+	aliases {
+		ethernet0 = "/soc@ffe00000/ethernet@24000";
+		ethernet1 = "/soc@ffe00000/ethernet@25000";
+		ethernet2 = "/soc@ffe00000/ethernet@26000";
+		serial0 = "/soc@ffe00000/serial@4600";
+		pci0 = "/pcie@ffe09000";
+		pci1 = "/pcie@ffe0a000";
+		serial1 = "/soc@ffe00000/serial@4600";
+	};
+
+	chosen {
+		bootargs = "console=ttyS0,115200 pci=realloc";
+	};
+
+	cpus {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+
+		cpu@0 {
+			device_type = "cpu";
+			reg = <0x00>;
+			next-level-cache = <0x01>;
+			compatible = "PowerPC,P2020";
+		};
+
+		cpu@1 {
+			device_type = "cpu";
+			reg = <0x01>;
+			next-level-cache = <0x01>;
+			compatible = "PowerPC,P2020";
+		};
+	};
+
+	memory {
+		device_type = "memory";
+	};
+
+	localbus@ffe05000 {
+		#address-cells = <0x02>;
+		#size-cells = <0x01>;
+		compatible = "fsl,p2020-elbc\0fsl,elbc\0simple-bus";
+		reg = <0x00 0xffe05000 0x00 0x1000>;
+		interrupts = <0x13 0x02>;
+		interrupt-parent = <0x02>;
+		ranges = <0x00 0x00 0x00 0xec000000 0x4000000 0x01 0x00 0x00 0xffa00000 0x40000 0x02 0x00 0x00 0xffb00000 0x80000 0x03 0x00 0x00 0xffb80000 0x40000>;
+
+		nor@0 {
+			#address-cells = <0x01>;
+			#size-cells = <0x01>;
+			compatible = "cfi-flash";
+			reg = <0x00 0x00 0x4000000>;
+			bank-width = <0x02>;
+			device-width = <0x01>;
+
+			partition@0 {
+				label = "jffs2";
+				reg = <0x00 0x3900000>;
+			};
+
+			partition@3b00000 {
+				label = "kernel";
+				reg = <0x3b00000 0x400000>;
+			};
+
+			partition@3f00000 {
+				label = "dtb";
+				reg = <0x3f00000 0x80000>;
+			};
+
+			partition@3f80000 {
+				label = "u-boot";
+				reg = <0x3f80000 0x80000>;
+				read-only;
+			};
+		};
+
+		nand@100000000 {
+			#address-cells = <0x01>;
+			#size-cells = <0x01>;
+			compatible = "fsl,p2020-fcm-nand\0fsl,elbc-fcm-nand";
+			reg = <0x01 0x00 0x40000>;
+		};
+
+		cpld@200000000 {
+			#address-cells = <0x01>;
+			#size-cells = <0x01>;
+			compatible = "kennisis_cpld";
+			reg = <0x02 0x00 0x80000>;
+
+			reset@0 {
+				reg = <0x00 0x40000>;
+			};
+
+			led@40000 {
+				reg = <0x40000 0x40000>;
+			};
+		};
+
+		lpsram@300000000 {
+			compatible = "kennisis_lpsram";
+			reg = <0x03 0x00 0x40000>;
+		};
+	};
+
+	soc@ffe00000 {
+		#address-cells = <0x01>;
+		#size-cells = <0x01>;
+		device_type = "soc";
+		compatible = "fsl,p2020-immr\0simple-bus";
+		ranges = <0x00 0x00 0xffe00000 0x100000>;
+		bus-frequency = <0x00>;
+
+		i2c@3000 {
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			cell-index = <0x00>;
+			compatible = "fsl-i2c";
+			reg = <0x3000 0x100>;
+			interrupts = <0x2b 0x02>;
+			interrupt-parent = <0x02>;
+			dfsrr;
+
+			rtc@68 {
+				compatible = "dallas,ds1339";
+				reg = <0x68>;
+				interrupts = <0x04 0x03>;
+				interrupt-parent = <0x02>;
+			};
+
+			eeprom@50 {
+				compatible = "atmel,24c02";
+				reg = <0x50>;
+			};
+		};
+
+		serial@4600 {
+			cell-index = <0x01>;
+			device_type = "serial";
+			compatible = "ns16550";
+			reg = <0x4600 0x100>;
+			clock-frequency = <0x00>;
+			interrupts = <0x2a 0x02>;
+			interrupt-parent = <0x02>;
+		};
+
+		gpio-controller@f000 {
+			#gpio-cells = <0x02>;
+			compatible = "fsl,mpc8572-gpio";
+			reg = <0xf000 0x100>;
+			interrupts = <0x2f 0x02>;
+			interrupt-parent = <0x02>;
+			gpio-controller;
+		};
+
+		l2-cache-controller@20000 {
+			compatible = "fsl,p2020-l2-cache-controller";
+			reg = <0x20000 0x1000>;
+			cache-line-size = <0x20>;
+			cache-size = <0x80000>;
+			interrupts = <0x10 0x02>;
+			interrupt-parent = <0x02>;
+			phandle = <0x01>;
+			linux,phandle = <0x01>;
+		};
+
+		usb@22000 {
+			compatible = "fsl-usb2-dr";
+			reg = <0x22000 0x1000>;
+			interrupts = <0x1c 0x02>;
+			interrupt-parent = <0x02>;
+			phy_type = "ulpi";
+			dr_mode = "host";
+		};
+
+		ptimer@24e00 {
+			compatible = "fsl,gianfar-ptp-timer";
+			reg = <0x24e00 0xb0>;
+			phandle = <0x03>;
+		};
+
+		ethernet@24000 {
+			#address-cells = <0x01>;
+			#size-cells = <0x01>;
+			cell-index = <0x00>;
+			device_type = "network";
+			model = "eTSEC";
+			compatible = "gianfar";
+			reg = <0x24000 0x1000>;
+			ranges = <0x00 0x24000 0x1000>;
+			local-mac-address = [00 00 00 00 00 00];
+			interrupts = <0x1d 0x02 0x1e 0x02 0x22 0x02>;
+			interrupt-parent = <0x02>;
+			fixed-link = <0x01 0x01 0x3e8 0x00 0x00>;
+			phy-connection-type = "rgmii-id";
+			ptimer-handle = <0x03>;
+
+			mdio@520 {
+				#address-cells = <0x01>;
+				#size-cells = <0x00>;
+				compatible = "fsl,gianfar-tbi";
+				reg = <0x520 0x20>;
+
+				phy@3 {
+					reg = <0x03>;
+					device_type = "ethernet-phy";
+					phandle = <0x05>;
+				};
+			};
+		};
+
+		ethernet@25000 {
+			#address-cells = <0x01>;
+			#size-cells = <0x01>;
+			cell-index = <0x01>;
+			device_type = "network";
+			model = "eTSEC";
+			compatible = "gianfar";
+			reg = <0x25000 0x1000>;
+			ranges = <0x00 0x25000 0x1000>;
+			local-mac-address = [00 00 00 00 00 00];
+			interrupts = <0x23 0x02 0x24 0x02 0x28 0x02>;
+			interrupt-parent = <0x02>;
+			tbi-handle = <0x04>;
+			phy-handle = <0x05>;
+			phy-connection-type = "sgmii";
+			ptimer-handle = <0x03>;
+
+			mdio@520 {
+				#address-cells = <0x01>;
+				#size-cells = <0x00>;
+				compatible = "fsl,gianfar-tbi";
+				reg = <0x520 0x20>;
+
+				tbi-phy@11 {
+					reg = <0x11>;
+					device_type = "tbi-phy";
+					phandle = <0x04>;
+				};
+			};
+		};
+
+		ethernet@26000 {
+			#address-cells = <0x01>;
+			#size-cells = <0x01>;
+			cell-index = <0x02>;
+			device_type = "network";
+			model = "eTSEC";
+			compatible = "gianfar";
+			reg = <0x26000 0x1000>;
+			ranges = <0x00 0x26000 0x1000>;
+			local-mac-address = [00 00 00 00 00 00];
+			interrupts = <0x1f 0x02 0x20 0x02 0x21 0x02>;
+			interrupt-parent = <0x02>;
+			tbi-handle = <0x06>;
+			fixed-link = <0x1f 0x01 0x3e8 0x00 0x00>;
+			phy-connection-type = "sgmii";
+			ptimer-handle = <0x03>;
+
+			mdio@520 {
+				#address-cells = <0x01>;
+				#size-cells = <0x00>;
+				compatible = "fsl,gianfar-tbi";
+				reg = <0x520 0x20>;
+
+				tbi-phy@12 {
+					reg = <0x12>;
+					device_type = "tbi-phy";
+					phandle = <0x06>;
+				};
+			};
+		};
+
+		sdhci@2e000 {
+			compatible = "fsl,p2020-esdhc\0fsl,esdhc";
+			reg = <0x2e000 0x1000>;
+			interrupts = <0x48 0x02>;
+			interrupt-parent = <0x02>;
+			fsl,sdhci-adjust-timeout;
+			clock-frequency = <0x00>;
+		};
+
+		crypto@30000 {
+			compatible = "fsl,sec3.1";
+			reg = <0x30000 0x10000>;
+			interrupts = <0x2d 0x02 0x3a 0x02>;
+			interrupt-parent = <0x02>;
+			fsl,num-channels = <0x04>;
+			fsl,channel-fifo-len = <0x18>;
+			fsl,exec-units-mask = <0xbfe>;
+			fsl,descriptor-types-mask = <0x3ab0ebf>;
+		};
+
+		pic@40000 {
+			interrupt-controller;
+			#address-cells = <0x00>;
+			#interrupt-cells = <0x02>;
+			reg = <0x40000 0x40000>;
+			compatible = "chrp,open-pic";
+			device_type = "open-pic";
+			phandle = <0x02>;
+		};
+
+		global-utilities@e0000 {
+			compatible = "fsl,p2020-guts";
+			reg = <0xe0000 0x1000>;
+			fsl,has-rstcr;
+		};
+	};
+
+	pcie@ffe09000 {
+		cell-index = <0x01>;
+		compatible = "fsl,mpc8548-pcie";
+		device_type = "pci";
+		#interrupt-cells = <0x01>;
+		#size-cells = <0x02>;
+		#address-cells = <0x03>;
+		reg = <0x00 0xffe09000 0x00 0x1000>;
+		bus-range = <0x00 0xff>;
+		ranges = <0x2000000 0x00 0xa0000000 0x00 0xa0000000 0x00 0x20000000 0x1000000 0x00 0x00 0x00 0xffc10000 0x00 0x10000>;
+		clock-frequency = <0x1fca055>;
+		interrupts = <0x19 0x02>;
+		interrupt-parent = <0x02>;
+		interrupt-map-mask = <0xf800 0x00 0x00 0x07>;
+		interrupt-map = <0x00 0x00 0x00 0x01 0x02 0x04 0x01 0x00 0x00 0x00 0x02 0x02 0x05 0x01 0x00 0x00 0x00 0x03 0x02 0x06 0x01 0x00 0x00 0x00 0x04 0x02 0x07 0x01>;
+		status = "disabled";
+
+		pcie@0 {
+			reg = <0x00 0x00 0x00 0x00 0x00>;
+			#size-cells = <0x02>;
+			#address-cells = <0x03>;
+			device_type = "pci";
+			ranges = <0x2000000 0x00 0xa0000000 0x2000000 0x00 0xa0000000 0x00 0x20000000 0x1000000 0x00 0x00 0x1000000 0x00 0x00 0x00 0x100000>;
+		};
+	};
+
+	pcie@ffe0a000 {
+		cell-index = <0x02>;
+		compatible = "fsl,mpc8548-pcie";
+		device_type = "pci";
+		#interrupt-cells = <0x01>;
+		#size-cells = <0x02>;
+		#address-cells = <0x03>;
+		reg = <0x00 0xffe0a000 0x00 0x1000>;
+		bus-range = <0x00 0xff>;
+		ranges = <0x2000000 0x00 0xc0000000 0x00 0xc0000000 0x00 0x20000000 0x1000000 0x00 0x00 0x00 0xffc00000 0x00 0x10000>;
+		clock-frequency = <0x1fca055>;
+		interrupts = <0x1a 0x02>;
+		interrupt-parent = <0x02>;
+		interrupt-map-mask = <0xf800 0x00 0x00 0x07>;
+		interrupt-map = <0x00 0x00 0x00 0x01 0x02 0x00 0x01 0x00 0x00 0x00 0x02 0x02 0x01 0x01 0x00 0x00 0x00 0x03 0x02 0x02 0x01 0x00 0x00 0x00 0x04 0x02 0x03 0x01>;
+		max-link-speed = <0x02>;
+		status = "okay";
+
+		pcie@0 {
+			reg = <0x00 0x00 0x00 0x00 0x00>;
+			#size-cells = <0x02>;
+			#address-cells = <0x03>;
+			device_type = "pci";
+			ranges = <0x2000000 0x00 0xc0000000 0x2000000 0x00 0xc0000000 0x00 0x20000000 0x1000000 0x00 0x00 0x1000000 0x00 0x00 0x00 0x100000>;
+		};
+	};
+};
